@@ -1,719 +1,302 @@
-import streamlit as st
 import random
-
-# --------------------------------------------------
-# PAGE SETUP
-# --------------------------------------------------
+import streamlit as st
 
 st.set_page_config(
     page_title="Shape Tetris",
     page_icon="🧩",
-    layout="centered"
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
-# --------------------------------------------------
-# GAME SETTINGS
-# --------------------------------------------------
+# ---------- Compact, cleaner styling ----------
+st.markdown("""
+<style>
+.block-container {
+    max-width: 1100px;
+    padding: 1rem 1.5rem 0.8rem;
+}
+.game-title {
+    text-align:center;
+    font-size:2.1rem;
+    font-weight:800;
+    margin-bottom:0;
+}
+.subtitle {
+    text-align:center;
+    color:#9ca3af;
+    margin:0 0 .7rem;
+}
+.stat {
+    background:#171b24;
+    border:1px solid #303746;
+    border-radius:10px;
+    text-align:center;
+    padding:7px;
+}
+.stat b { font-size:1.25rem; }
+.stat small { color:#9ca3af; }
+.board-wrap {
+    display:flex;
+    justify-content:center;
+    margin:.2rem 0 .5rem;
+}
+.game-board {
+    display:grid;
+    grid-template-columns:repeat(8, 38px);
+    grid-template-rows:repeat(10, 38px);
+    gap:3px;
+    padding:6px;
+    background:#0d1117;
+    border:2px solid #303746;
+    border-radius:12px;
+}
+.game-cell {
+    width:38px;
+    height:38px;
+    border-radius:6px;
+    box-sizing:border-box;
+}
+.empty-cell {
+    background:#171b24;
+    border:1px solid #252c38;
+}
+.filled-cell {
+    border:1px solid rgba(255,255,255,.3);
+    box-shadow:inset 0 1px rgba(255,255,255,.2);
+}
+.panel {
+    background:#151922;
+    border:1px solid #303746;
+    border-radius:12px;
+    padding:12px;
+}
+.preview {
+    display:grid;
+    grid-template-columns:repeat(4,24px);
+    grid-auto-rows:24px;
+    gap:3px;
+    justify-content:center;
+    margin:8px 0;
+}
+.preview-cell {
+    width:24px;
+    height:24px;
+    border-radius:4px;
+}
+</style>
+""", unsafe_allow_html=True)
 
-BOARD_WIDTH = 8
-BOARD_HEIGHT = 10
+WIDTH, HEIGHT = 8, 10
 
 SHAPES = {
-    "Triangle": [
-        (0, 0),
-        (1, 0),
-        (2, 0),
-        (1, 1)
-    ],
-
-    "L-Shape": [
-        (0, 0),
-        (0, 1),
-        (0, 2),
-        (1, 2)
-    ],
-
-    "Z-Shape": [
-        (0, 0),
-        (1, 0),
-        (1, 1),
-        (2, 1)
-    ],
-
-    "Square": [
-        (0, 0),
-        (1, 0),
-        (0, 1),
-        (1, 1)
-    ],
-
-    "T-Shape": [
-        (0, 0),
-        (1, 0),
-        (2, 0),
-        (1, 1)
-    ]
+    "L-Shape": [(0,0),(1,0),(2,0),(2,1)],
+    "Z-Shape": [(0,0),(1,0),(1,1),(2,1)],
+    "Square": [(0,0),(1,0),(0,1),(1,1)],
+    "T-Shape": [(0,0),(1,0),(2,0),(1,1)],
+    "Line": [(0,0),(1,0),(2,0),(3,0)],
 }
-
 COLORS = {
-    "Triangle": "#8B5CF6",
-    "L-Shape": "#F59E0B",
-    "Z-Shape": "#EF4444",
-    "Square": "#22C55E",
-    "T-Shape": "#3B82F6"
+    "L-Shape":"#ff9f43", "Z-Shape":"#ff6b81", "Square":"#ffd93d",
+    "T-Shape":"#a66cff", "Line":"#45aaf2"
 }
 
-# --------------------------------------------------
-# HELPER FUNCTIONS
-# --------------------------------------------------
+def normalize(shape):
+    min_x = min(x for x,y in shape)
+    min_y = min(y for x,y in shape)
+    return sorted((x-min_x, y-min_y) for x,y in shape)
 
-def normalize_shape(cells):
-    """
-    Moves a shape so its smallest x and y coordinates
-    are both 0.
-    """
+def rotate(shape):
+    return normalize([(-y,x) for x,y in shape])
 
-    min_x = min(x for x, y in cells)
-    min_y = min(y for x, y in cells)
+def reflect(shape):
+    return normalize([(-x,y) for x,y in shape])
 
-    normalized = [
-        (x - min_x, y - min_y)
-        for x, y in cells
-    ]
+def piece():
+    name = random.choice(list(SHAPES))
+    return {"name":name, "shape":normalize(SHAPES[name]), "color":COLORS[name]}
 
-    return sorted(normalized)
+def blank_board():
+    return [[None]*WIDTH for _ in range(HEIGHT)]
 
-
-def rotate_shape(cells):
-    """
-    Rotates a shape 90 degrees clockwise.
-    """
-
-    rotated = [
-        (-y, x)
-        for x, y in cells
-    ]
-
-    return normalize_shape(rotated)
-
-
-def reflect_shape(cells):
-    """
-    Reflects a shape across a vertical axis.
-    """
-
-    reflected = [
-        (-x, y)
-        for x, y in cells
-    ]
-
-    return normalize_shape(reflected)
-
-
-def create_piece():
-    """
-    Creates a random geometric piece.
-    """
-
-    name = random.choice(list(SHAPES.keys()))
-
-    return {
-        "name": name,
-        "cells": normalize_shape(SHAPES[name]),
-        "x": 0,
-        "y": 0
-    }
-
-
-def can_place(board, cells, position_x, position_y):
-    """
-    Checks whether a piece can be placed
-    at a specific location.
-    """
-
-    for x, y in cells:
-
-        board_x = position_x + x
-        board_y = position_y + y
-
-        # Outside board
-        if board_x < 0:
+def can_place(board, shape, px, py):
+    for dx,dy in shape:
+        x,y = px+dx, py+dy
+        if x < 0 or x >= WIDTH or y < 0 or y >= HEIGHT:
             return False
-
-        if board_x >= BOARD_WIDTH:
+        if board[y][x] is not None:
             return False
-
-        if board_y < 0:
-            return False
-
-        if board_y >= BOARD_HEIGHT:
-            return False
-
-        # Occupied square
-        if board[board_y][board_x] is not None:
-            return False
-
     return True
 
+def put_piece(board, p, px, py):
+    b = [row[:] for row in board]
+    for dx,dy in p["shape"]:
+        b[py+dy][px+dx] = p["color"]
+    return b
 
-def place_piece(board, cells, position_x, position_y, name):
-    """
-    Places a piece onto the board.
-    """
+def clear_rows(board):
+    kept = [r for r in board if not all(c is not None for c in r)]
+    cleared = HEIGHT - len(kept)
+    while len(kept) < HEIGHT:
+        kept.insert(0, [None]*WIDTH)
+    return kept, cleared
 
-    for x, y in cells:
+def has_move(board, p):
+    max_x = WIDTH - 1 - max(x for x,y in p["shape"])
+    max_y = HEIGHT - 1 - max(y for x,y in p["shape"])
+    return any(can_place(board,p["shape"],x,y)
+               for y in range(max_y+1) for x in range(max_x+1))
 
-        board_x = position_x + x
-        board_y = position_y + y
-
-        board[board_y][board_x] = name
-
-
-def clear_completed_rows(board):
-    """
-    Removes rows that are completely filled.
-    """
-
-    completed = []
-
-    for row_index, row in enumerate(board):
-
-        if all(cell is not None for cell in row):
-            completed.append(row_index)
-
-    # Remove completed rows
-    for row_index in reversed(completed):
-        del board[row_index]
-
-    # Add empty rows at the top
-    for _ in completed:
-        board.insert(
-            0,
-            [None] * BOARD_WIDTH
-        )
-
-    return len(completed)
-
-
-def possible_position(board, piece):
-    """
-    Checks whether a piece can be placed anywhere.
-    """
-
-    cells = piece["cells"]
-
-    max_x = max(x for x, y in cells)
-    max_y = max(y for x, y in cells)
-
-    for y in range(BOARD_HEIGHT - max_y):
-
-        for x in range(BOARD_WIDTH - max_x):
-
-            if can_place(
-                board,
-                cells,
-                x,
-                y
-            ):
-                return True
-
-    return False
-
-
-# --------------------------------------------------
-# INITIALIZE GAME
-# --------------------------------------------------
-
-def start_game():
-
-    st.session_state.board = [
-        [None] * BOARD_WIDTH
-        for _ in range(BOARD_HEIGHT)
-    ]
-
-    st.session_state.piece = create_piece()
-
+def reset():
+    st.session_state.board = blank_board()
+    st.session_state.piece = piece()
     st.session_state.score = 0
-
-    st.session_state.rows_cleared = 0
-
+    st.session_state.rows = 0
     st.session_state.moves = 0
-
-    st.session_state.message = (
-        "Place your first shape!"
-    )
-
+    st.session_state.x = 2
+    st.session_state.y = 0
+    st.session_state.message = "Place your first shape!"
     st.session_state.game_over = False
 
-
 if "board" not in st.session_state:
-    start_game()
-
-
-# --------------------------------------------------
-# TITLE
-# --------------------------------------------------
-
-st.title("🧩 Shape Tetris")
-
-st.write(
-    "Combine Tetris with geometry! "
-    "Rotate, reflect, and position shapes to "
-    "complete rows."
-)
-
-
-# --------------------------------------------------
-# SIDEBAR
-# --------------------------------------------------
-
-with st.sidebar:
-
-    st.header("📖 How to Play")
-
-    st.write(
-        """
-        **Goal:** Complete as many rows as possible.
-
-        1. Choose a transformation.
-        2. Move your shape.
-        3. Place it on the board.
-        4. Complete rows.
-        5. Earn points!
-        """
-    )
-
-    st.divider()
-
-    st.subheader("📐 Geometry Skills")
-
-    st.write("🔄 Rotation")
-    st.write("↔️ Reflection")
-    st.write("📏 Area")
-    st.write("⭐ Symmetry")
-    st.write("🧠 Spatial reasoning")
-
-    st.divider()
-
-    if st.button(
-        "🔄 Restart Game",
-        use_container_width=True
-    ):
-
-        start_game()
-
-        st.rerun()
-
-
-# --------------------------------------------------
-# CURRENT PIECE
-# --------------------------------------------------
-
-piece = st.session_state.piece
-
-st.subheader(
-    f"Current Shape: {piece['name']}"
-)
-
-
-# --------------------------------------------------
-# TRANSFORMATION BUTTONS
-# --------------------------------------------------
-
-col1, col2, col3 = st.columns(3)
-
-
-with col1:
-
-    if st.button(
-        "↻ Rotate",
-        use_container_width=True
-    ):
-
-        piece["cells"] = rotate_shape(
-            piece["cells"]
-        )
-
-        st.session_state.moves += 1
-
-        st.rerun()
-
-
-with col2:
-
-    if st.button(
-        "↔ Reflect",
-        use_container_width=True
-    ):
-
-        piece["cells"] = reflect_shape(
-            piece["cells"]
-        )
-
-        st.session_state.moves += 1
-
-        st.rerun()
-
-
-with col3:
-
-    if st.button(
-        "🎲 New Shape",
-        use_container_width=True
-    ):
-
-        st.session_state.piece = create_piece()
-
-        st.rerun()
-
-
-# --------------------------------------------------
-# POSITION CONTROLS
-# --------------------------------------------------
-
-max_x = max(
-    x for x, y in piece["cells"]
-)
-
-max_y = max(
-    y for x, y in piece["cells"]
-)
-
-
-max_horizontal_position = (
-    BOARD_WIDTH - 1 - max_x
-)
-
-max_vertical_position = (
-    BOARD_HEIGHT - 1 - max_y
-)
-
-
-piece["x"] = st.slider(
-    "Horizontal Position",
-    min_value=0,
-    max_value=max_horizontal_position,
-    value=min(
-        piece["x"],
-        max_horizontal_position
-    )
-)
-
-
-piece["y"] = st.slider(
-    "Vertical Position",
-    min_value=0,
-    max_value=max_vertical_position,
-    value=min(
-        piece["y"],
-        max_vertical_position
-    )
-)
-
-
-# --------------------------------------------------
-# DRAW BOARD
-# --------------------------------------------------
-
-board_html = """
-<style>
-
-.game-board {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(8, 1fr);
-
-    gap: 4px;
-
-    max-width: 440px;
-
-    margin: auto;
-
-}
-
-.game-cell {
-
-    aspect-ratio: 1 / 1;
-
-    border-radius: 6px;
-
-    border: 1px solid
-        rgba(128,128,128,0.4);
-
-}
-
-.empty-cell {
-
-    background:
-        rgba(128,128,128,0.08);
-
-}
-
-</style>
-
-<div class="game-board">
-"""
-
-
-for y in range(BOARD_HEIGHT):
-
-    for x in range(BOARD_WIDTH):
-
-        # Is the current piece occupying this square?
-        current_piece = False
-
-        for cell_x, cell_y in piece["cells"]:
-
-            if (
-                x == piece["x"] + cell_x
-                and
-                y == piece["y"] + cell_y
-            ):
-
-                current_piece = True
-
-                break
-
-
-        # Current moving piece
-        if current_piece:
-
-            color = COLORS[
-                piece["name"]
-            ]
-
-            board_html += f"""
-            <div
-                class="game-cell"
-                style="background:{color};"
-            ></div>
-            """
-
-        # Existing piece
-        elif st.session_state.board[y][x]:
-
-            existing_name = (
-                st.session_state.board[y][x]
-            )
-
-            color = COLORS[
-                existing_name
-            ]
-
-            board_html += f"""
-            <div
-                class="game-cell"
-                style="background:{color};"
-            ></div>
-            """
-
-        # Empty square
-        else:
-
-            board_html += """
-            <div
-                class="game-cell empty-cell"
-            ></div>
-            """
-
-
-board_html += "</div>"
-
-
-st.markdown(
-    board_html,
-    unsafe_allow_html=True
-)
-
-
-# --------------------------------------------------
-# GAME STATISTICS
-# --------------------------------------------------
+    reset()
+
+# ---------- Header ----------
+st.markdown('<div class="game-title">🧩 Shape Tetris</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Fit shapes • transform them • clear rows • earn points</div>',
+            unsafe_allow_html=True)
+
+a,b,c,d = st.columns(4)
+for col, value, label in [
+    (a, st.session_state.score, "Score"),
+    (b, st.session_state.rows, "Rows"),
+    (c, st.session_state.moves, "Moves"),
+    (d, len(st.session_state.piece["shape"]), "Cells"),
+]:
+    with col:
+        st.markdown(f'<div class="stat"><b>{value}</b><br><small>{label}</small></div>',
+                    unsafe_allow_html=True)
 
 st.write("")
 
+# ---------- Main area ----------
+left, right = st.columns([1.35, 1], gap="large")
 
-stat1, stat2, stat3 = st.columns(3)
+with left:
+    display = [row[:] for row in st.session_state.board]
+    p = st.session_state.piece
 
-
-with stat1:
-
-    st.metric(
-        "⭐ Score",
-        st.session_state.score
-    )
-
-
-with stat2:
-
-    st.metric(
-        "🧱 Rows",
-        st.session_state.rows_cleared
-    )
-
-
-with stat3:
-
-    st.metric(
-        "🔄 Moves",
-        st.session_state.moves
-    )
-
-
-# --------------------------------------------------
-# VALIDATION
-# --------------------------------------------------
-
-valid_position = can_place(
-    st.session_state.board,
-    piece["cells"],
-    piece["x"],
-    piece["y"]
-)
-
-
-if not valid_position:
-
-    st.warning(
-        "⚠️ This shape cannot be placed here. "
-        "Move or transform it!"
-    )
-
-
-# --------------------------------------------------
-# PLACE BUTTON
-# --------------------------------------------------
-
-if st.button(
-    "📍 PLACE SHAPE",
-    use_container_width=True,
-    disabled=not valid_position
-):
-
-    # Put shape onto board
-    place_piece(
-        st.session_state.board,
-        piece["cells"],
-        piece["x"],
-        piece["y"],
-        piece["name"]
-    )
-
-    # Check completed rows
-    rows = clear_completed_rows(
-        st.session_state.board
-    )
-
-    # Calculate score
-    shape_area = len(
-        piece["cells"]
-    )
-
-    points = (
-        shape_area * 10
-        +
-        rows * 100
-    )
-
-    st.session_state.score += points
-
-    st.session_state.rows_cleared += rows
-
-    st.session_state.moves += 1
-
-
-    # Message
-    if rows > 0:
-
-        st.session_state.message = (
-            f"🎉 AMAZING! You cleared "
-            f"{rows} row(s) and earned "
-            f"{points} points!"
-        )
-
-    else:
-
-        st.session_state.message = (
-            f"Nice placement! "
-            f"+{points} points."
-        )
-
-
-    # Generate next piece
-    st.session_state.piece = create_piece()
-
-
-    # Check game over
-    if not possible_position(
-        st.session_state.board,
-        st.session_state.piece
+    if not st.session_state.game_over and can_place(
+        display, p["shape"], st.session_state.x, st.session_state.y
     ):
+        for dx,dy in p["shape"]:
+            display[st.session_state.y+dy][st.session_state.x+dx] = p["color"]
 
-        st.session_state.game_over = True
+    cells = []
+    for row in display:
+        for cell in row:
+            if cell:
+                cells.append(
+                    f'<div class="game-cell filled-cell" style="background:{cell}"></div>'
+                )
+            else:
+                cells.append('<div class="game-cell empty-cell"></div>')
 
+    # This is the important fix: render HTML instead of showing HTML source.
+    st.markdown(
+        '<div class="board-wrap"><div class="game-board">' +
+        ''.join(cells) + '</div></div>',
+        unsafe_allow_html=True
+    )
+    st.info(st.session_state.message)
 
-    st.rerun()
+with right:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+    st.markdown(f"**Current shape:** {p['name']}")
 
+    max_x_shape = max(x for x,y in p["shape"])
+    max_y_shape = max(y for x,y in p["shape"])
+    preview = []
+    for y in range(max(2,max_y_shape+1)):
+        for x in range(max(4,max_x_shape+1)):
+            if (x,y) in p["shape"]:
+                preview.append(
+                    f'<div class="preview-cell" style="background:{p["color"]}"></div>'
+                )
+            else:
+                preview.append(
+                    '<div class="preview-cell" style="background:#202633"></div>'
+                )
+    st.markdown('<div class="preview">'+''.join(preview)+'</div>',
+                unsafe_allow_html=True)
 
-# --------------------------------------------------
-# MESSAGE
-# --------------------------------------------------
+    r1,r2 = st.columns(2)
+    with r1:
+        if st.button("↻ Rotate", use_container_width=True,
+                     disabled=st.session_state.game_over):
+            st.session_state.piece["shape"] = rotate(p["shape"])
+            st.rerun()
+    with r2:
+        if st.button("↔ Reflect", use_container_width=True,
+                     disabled=st.session_state.game_over):
+            st.session_state.piece["shape"] = reflect(p["shape"])
+            st.rerun()
 
-st.info(
-    st.session_state.message
-)
+    max_x = max(0, WIDTH-1-max(x for x,y in p["shape"]))
+    max_y = max(0, HEIGHT-1-max(y for x,y in p["shape"]))
 
-
-# --------------------------------------------------
-# GAME OVER
-# --------------------------------------------------
-
-if st.session_state.game_over:
-
-    st.error(
-        "🏁 GAME OVER!"
+    st.session_state.x = st.slider(
+        "Horizontal position", 0, max_x,
+        min(st.session_state.x,max_x),
+        disabled=st.session_state.game_over
+    )
+    st.session_state.y = st.slider(
+        "Vertical position", 0, max_y,
+        min(st.session_state.y,max_y),
+        disabled=st.session_state.game_over
     )
 
-    st.subheader(
-        f"Final Score: "
-        f"{st.session_state.score}"
-    )
+    if st.button("📌 Place Shape", type="primary", use_container_width=True,
+                 disabled=st.session_state.game_over):
+        if can_place(st.session_state.board,p["shape"],
+                     st.session_state.x,st.session_state.y):
+            st.session_state.board = put_piece(
+                st.session_state.board,p,st.session_state.x,st.session_state.y
+            )
+            st.session_state.moves += 1
+            st.session_state.board, cleared = clear_rows(st.session_state.board)
+            st.session_state.rows += cleared
+            st.session_state.score += len(p["shape"])*10 + cleared*100
+            st.session_state.piece = piece()
+            st.session_state.x = 2
+            st.session_state.y = 0
 
-    st.write(
-        f"You cleared "
-        f"{st.session_state.rows_cleared} rows!"
-    )
+            if not has_move(st.session_state.board,st.session_state.piece):
+                st.session_state.game_over = True
+                st.session_state.message = "🎉 Game over! No more valid moves."
+            elif cleared:
+                st.session_state.message = (
+                    f"Great! You cleared {cleared} row(s)! "
+                    f"+{cleared*100} points"
+                )
+            else:
+                st.session_state.message = "Nice placement!"
+            st.rerun()
+        else:
+            st.session_state.message = "⚠️ That position overlaps another block."
+            st.rerun()
 
-    if st.button(
-        "🎮 Play Again",
-        use_container_width=True
-    ):
-
-        start_game()
-
+    if st.button("🔄 New Game", use_container_width=True):
+        reset()
         st.rerun()
 
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# --------------------------------------------------
-# GEOMETRY INFORMATION
-# --------------------------------------------------
+with st.expander("📐 How to play + geometry skills"):
+    st.markdown("""
+    **How to play:** Move the shape, rotate or reflect it, then place it.
+    Complete a full row to clear it and earn bonus points.
 
-st.divider()
+    **Geometry:** rotation, reflection, area, symmetry, and spatial reasoning.
+    """)
 
-st.subheader("📐 Geometry Challenge")
-
-st.write(
-    f"""
-    Every piece currently contains **4 unit squares**,
-    so each piece has an area of **4 square units**.
-
-    Try rotating and reflecting the pieces to discover
-    which transformations help you fit them together!
-    """
-)
-
-st.caption(
-    "Shape Tetris — Math + Geometry Game"
-)
+st.caption("Tip: Leave open spaces for larger shapes instead of filling one side too quickly.")
