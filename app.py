@@ -130,8 +130,8 @@ html, body {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(10, minmax(30px, 43px));
-  grid-template-rows: repeat(14, minmax(30px, 43px));
+  grid-template-columns: repeat(10, minmax(24px, 35px));
+  grid-template-rows: repeat(14, minmax(24px, 35px));
   gap: 4px;
   padding: 7px;
   background: #080b11;
@@ -379,8 +379,8 @@ button.primary:hover {
   html, body { overflow: auto; }
   .layout { grid-template-columns: 1fr; }
   .board {
-    grid-template-columns: repeat(10, 34px);
-    grid-template-rows: repeat(14, 34px);
+    grid-template-columns: repeat(10, 28px);
+    grid-template-rows: repeat(14, 28px);
   }
   .topbar { align-items: flex-start; }
   .status { display: none; }
@@ -755,4 +755,4 @@ button.primary:hover {
 </html>
 """
 
-components.html(GAME_HTML, height=705, scrolling=False)
+components.html(GAME_HTML, height=640, scrolling=False)
