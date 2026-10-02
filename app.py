@@ -130,8 +130,8 @@ html, body {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(8, minmax(30px, 43px));
-  grid-template-rows: repeat(10, minmax(30px, 43px));
+  grid-template-columns: repeat(10, minmax(30px, 43px));
+  grid-template-rows: repeat(14, minmax(30px, 43px));
   gap: 4px;
   padding: 7px;
   background: #080b11;
@@ -379,8 +379,8 @@ button.primary:hover {
   html, body { overflow: auto; }
   .layout { grid-template-columns: 1fr; }
   .board {
-    grid-template-columns: repeat(8, 34px);
-    grid-template-rows: repeat(10, 34px);
+    grid-template-columns: repeat(10, 34px);
+    grid-template-rows: repeat(14, 34px);
   }
   .topbar { align-items: flex-start; }
   .status { display: none; }
@@ -466,7 +466,7 @@ button.primary:hover {
 
 <script>
 (() => {
-  const W = 8, H = 10;
+  const W = 10, H = 14;
 
   const SHAPES = {
     "L-Shape": [[0,0],[1,0],[2,0],[2,1]],
